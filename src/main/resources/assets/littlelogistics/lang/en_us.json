@@ -87,7 +87,7 @@
   "item.littlelogistics.tug_route.node_named": "%s. %s",
   "item.littlelogistics.tug_route.node_line": "Node %s: %s, %s",
 
-  "item.littlelogistics.conductors_wrench.description": "Can be used to rotate vanilla rails and configure Little Logistics blocks.",
+  "item.littlelogistics.conductors_wrench.description": "Rotates vanilla rails and configures Little Logistics blocks. Sneak-use to pick up docking stations.",
 
   "item.littlelogistics.locomotive_route.description": "Right click rails to create an ordered loop. Click a waypoint to remove it. Click a highlighted segment, then a rail, to insert a waypoint. Sneak-right-click to cancel a segment edit.",
   "item.littlelogistics.locomotive_route.num_nodes": "Route Nodes: %s",

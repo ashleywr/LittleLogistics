@@ -90,7 +90,9 @@ public abstract class AbstractVesselRenderer<T extends VesselEntity> extends Ent
         matrixStack.mulPose(Axis.YP.rotation(-(float) Math.atan2(vec.z, vec.x)));
         matrixStack.mulPose(Axis.ZP.rotation((float) (Math.asin(vec.y / dist))));
 
-        for (int i = 1; i < segments; i++) {
+        // Keep an extra link inside the follower attachment. The changing final link then
+        // remains inside the leader attachment instead of flickering in the visible span.
+        for (int i = 0; i < segments; i++) {
             matrixStack.pushPose();
             matrixStack.translate(i / 4.0, 0, 0);
             chainModel.renderToBuffer(matrixStack, chainBuffer, packedLight, OverlayTexture.NO_OVERLAY, -1);

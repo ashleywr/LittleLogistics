@@ -119,8 +119,8 @@ public abstract class AbstractTugEntity extends VesselEntity implements Linkable
     // cruising a route. Easing toward the track's own direction (rather than snapping to
     // the noisy tug-to-lookahead vector) keeps straights steady and corners smooth.
     private static final float ROUTE_YAW_SMOOTHING = 0.3F;
-    private static final double FOLLOWER_CORRECTION_BLEND = 0.65D;
     private static final double FOLLOWER_HARD_SNAP_DISTANCE = 4.0D;
+    private static final float FOLLOWER_YAW_SMOOTHING = 0.45F;
     private static final double DOCK_SETTLE_STEP = 0.08D;
     private static final double DOCK_SETTLE_EPSILON = 0.02D;
     private static final double DOCK_CLEAR_DISTANCE = 0.75D;
@@ -1183,14 +1183,15 @@ public abstract class AbstractTugEntity extends VesselEntity implements Linkable
         if (horizontalError > FOLLOWER_HARD_SNAP_DISTANCE) {
             return false;
         }
-        Vec3 correctedPosition = new Vec3(
-                Mth.lerp(FOLLOWER_CORRECTION_BLEND, currentPosition.x, target.x),
-                currentPosition.y,
-                Mth.lerp(FOLLOWER_CORRECTION_BLEND, currentPosition.z, target.z)
-        );
-
-        follower.moveTo(correctedPosition.x, follower.getY(), correctedPosition.z, (float) desiredYaw, follower.getXRot());
-        follower.setDeltaMovement(forward.scale(getRouteCruiseSpeed()));
+        follower.setDeltaMovement(SpringPhysicsUtil.calculateRouteFollowerVelocity(
+                currentPosition,
+                follower.getDeltaMovement(),
+                target,
+                forward,
+                getRouteCruiseSpeed()));
+        float smoothedYaw = Mth.wrapDegrees(follower.getYRot()
+                + Mth.degreesDifference(follower.getYRot(), (float) desiredYaw) * FOLLOWER_YAW_SMOOTHING);
+        follower.setYRot(smoothedYaw);
 
         return true;
     }

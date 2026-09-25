@@ -31,6 +31,12 @@ import java.util.Arrays;
 
 public class SpringPhysicsUtil {
 
+    private static final double SOFT_TENSION_RANGE = 0.10D;
+    private static final double PULL_RESPONSE = 0.80D;
+    private static final double ROUTE_CORRECTION_GAIN = 0.35D;
+    private static final double MAX_ROUTE_CORRECTION_SPEED = 0.12D;
+    private static final double ROUTE_RESPONSE = 0.65D;
+
     public static float computeTargetYaw(Float currentYaw, Vec3 anchorPos, Vec3 otherAnchorPos) {
         float idealYaw = (float) (Math.atan2(otherAnchorPos.x - anchorPos.x, -(otherAnchorPos.z - anchorPos.z)) * (180f/Math.PI));
         float closestDistance = Float.POSITIVE_INFINITY;
@@ -63,34 +69,80 @@ public class SpringPhysicsUtil {
     public static <T extends Entity & LinkableEntity<T>> void pullLinkedEntities(T dominant, T dominated, double targetDistance) {
         Vec3 frontAnchor = dominant.position();
         Vec3 backAnchor = dominated.position();
-        Vec3 between = frontAnchor.subtract(backAnchor);
+        Vec3 between = new Vec3(frontAnchor.x - backAnchor.x, 0.0D, frontAnchor.z - backAnchor.z);
         double dist = between.length();
         if (dist <= 1.0E-4D) {
             return;
         }
 
-        double dx = (frontAnchor.x - backAnchor.x) / dist;
-        double dy = (frontAnchor.y - backAnchor.y) / dist;
-        double dz = (frontAnchor.z - backAnchor.z) / dist;
         final double alpha = 0.5;
 
         float targetYaw = SpringPhysicsUtil.computeTargetYaw(dominated.getYRot(), frontAnchor, backAnchor);
         dominated.setYRot((float) ((alpha * dominated.getYRot() + targetYaw * (1f - alpha)) % 360));
+        dominated.setDeltaMovement(calculateFollowerVelocity(
+                frontAnchor,
+                dominant.getDeltaMovement(),
+                backAnchor,
+                dominated.getDeltaMovement(),
+                targetDistance));
+    }
 
-        if (dist <= targetDistance) {
-            Vec3 current = dominated.getDeltaMovement();
-            dominated.setDeltaMovement(0.0D, current.y, 0.0D);
-            return;
+    static Vec3 calculateFollowerVelocity(Vec3 leaderPosition, Vec3 leaderVelocity,
+                                          Vec3 followerPosition, Vec3 followerVelocity,
+                                          double targetDistance) {
+        Vec3 horizontalOffset = new Vec3(
+                leaderPosition.x - followerPosition.x,
+                0.0D,
+                leaderPosition.z - followerPosition.z);
+        double distance = horizontalOffset.length();
+        if (distance <= 1.0E-4D) {
+            return followerVelocity;
         }
 
-        double excess = dist - targetDistance;
-        double leaderSpeed = dominant.getDeltaMovement().length();
-        // Follower matches the leader's pace, plus a distance-proportional catch-up term
-        // so a stretched gap actually closes. The cap must scale with the leader's speed --
-        // a flat cap lets a fast leader permanently out-run its followers (and eventually
-        // sever the link at 20 blocks), which is what made barges fail to keep up.
+        double excess = Math.max(0.0D, distance - targetDistance);
+        double tension = Math.min(1.0D, excess / SOFT_TENSION_RANGE);
+        double leaderSpeed = Math.hypot(leaderVelocity.x, leaderVelocity.z);
+
+        // Match the leader and add catch-up speed once the link is taut. The soft
+        // engagement removes the stop/pull discontinuity at the target distance,
+        // while the speed-scaled cap still lets a stretched convoy close its gap.
         double maxPull = Math.max(0.5D, leaderSpeed * 1.5D);
-        double pullSpeed = Math.min(maxPull, Math.max(0.03D, leaderSpeed) + excess * 0.35D);
-        dominated.setDeltaMovement(pullSpeed * dx, pullSpeed * dy, pullSpeed * dz);
+        double desiredSpeed = Math.min(
+                maxPull,
+                (Math.max(0.03D, leaderSpeed) + excess * 0.35D) * tension);
+        Vec3 desiredHorizontal = horizontalOffset.scale(desiredSpeed / distance);
+        double retainedVelocity = 1.0D - PULL_RESPONSE;
+
+        return new Vec3(
+                followerVelocity.x * retainedVelocity + desiredHorizontal.x * PULL_RESPONSE,
+                followerVelocity.y,
+                followerVelocity.z * retainedVelocity + desiredHorizontal.z * PULL_RESPONSE);
+    }
+
+    public static Vec3 calculateRouteFollowerVelocity(Vec3 followerPosition, Vec3 followerVelocity,
+                                                      Vec3 targetPosition, Vec3 routeForward,
+                                                      double cruiseSpeed) {
+        Vec3 horizontalError = new Vec3(
+                targetPosition.x - followerPosition.x,
+                0.0D,
+                targetPosition.z - followerPosition.z);
+        double errorDistance = horizontalError.length();
+        Vec3 correction = errorDistance <= 1.0E-4D
+                ? Vec3.ZERO
+                : horizontalError.scale(
+                        Math.min(MAX_ROUTE_CORRECTION_SPEED, errorDistance * ROUTE_CORRECTION_GAIN)
+                                / errorDistance);
+
+        Vec3 horizontalForward = new Vec3(routeForward.x, 0.0D, routeForward.z);
+        Vec3 cruiseVelocity = horizontalForward.lengthSqr() <= 1.0E-4D
+                ? Vec3.ZERO
+                : horizontalForward.normalize().scale(cruiseSpeed);
+        Vec3 desiredVelocity = cruiseVelocity.add(correction);
+        double retainedVelocity = 1.0D - ROUTE_RESPONSE;
+
+        return new Vec3(
+                followerVelocity.x * retainedVelocity + desiredVelocity.x * ROUTE_RESPONSE,
+                followerVelocity.y,
+                followerVelocity.z * retainedVelocity + desiredVelocity.z * ROUTE_RESPONSE);
     }
 }

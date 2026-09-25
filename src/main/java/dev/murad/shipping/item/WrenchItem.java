@@ -1,6 +1,6 @@
 package dev.murad.shipping.item;
 
-import dev.murad.shipping.util.LocoRoute;
+import dev.murad.shipping.block.dockingstation.DockingStationBlock;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 
@@ -10,8 +10,6 @@ import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.TooltipFlag;
 import net.minecraft.world.item.context.UseOnContext;
-import net.minecraft.world.level.block.BaseRailBlock;
-import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.level.block.RailBlock;
 import net.minecraft.world.level.block.state.properties.RailShape;
@@ -45,14 +43,30 @@ public class WrenchItem extends Item {
 
     @Override
     public InteractionResult useOn(UseOnContext pContext) {
-        var state = pContext.getLevel().getBlockState(pContext.getClickedPos());
+        var level = pContext.getLevel();
+        var clickedPos = pContext.getClickedPos();
+        var state = level.getBlockState(clickedPos);
+        Player player = pContext.getPlayer();
+
+        if (player != null && player.isShiftKeyDown() && state.getBlock() instanceof DockingStationBlock) {
+            BlockPos controllerPos = state.getValue(DockingStationBlock.PART)
+                    .controllerPos(clickedPos, state.getValue(DockingStationBlock.FACING));
+            if (!level.getBlockState(controllerPos).is(state.getBlock())) {
+                return InteractionResult.PASS;
+            }
+            if (!level.isClientSide()) {
+                level.destroyBlock(controllerPos, !player.getAbilities().instabuild, player);
+            }
+            return InteractionResult.sidedSuccess(level.isClientSide());
+        }
+
         if(state.is(Blocks.RAIL)){
             var shape = state.getValue(RailBlock.SHAPE);
             if(shape.isAscending()){
                 return InteractionResult.PASS;
             }
-            if(!pContext.getLevel().isClientSide()){
-                pContext.getLevel().setBlock(pContext.getClickedPos(),
+            if(!level.isClientSide()){
+                level.setBlock(clickedPos,
                         state.setValue(RailBlock.SHAPE, nextShapes.getOrDefault(shape, shape)), 2);
             }
             return InteractionResult.SUCCESS;
