@@ -1,6 +1,7 @@
 package dev.murad.shipping.entity.custom.train.locomotive;
 
 import dev.murad.shipping.ShippingConfig;
+import dev.murad.shipping.api.DispatchNavigation;
 import dev.murad.shipping.block.dockingstation.DockingStationBlock;
 import dev.murad.shipping.block.dockingstation.DockingStationBlockEntity;
 import dev.murad.shipping.block.rail.JunctionRail;
@@ -8,15 +9,19 @@ import dev.murad.shipping.block.rail.MultiShapeRail;
 import dev.murad.shipping.capability.StallingCapability;
 import dev.murad.shipping.entity.accessor.DataAccessor;
 import dev.murad.shipping.entity.custom.HeadVehicle;
+import dev.murad.shipping.entity.custom.DispatchableHeadVehicle;
 import dev.murad.shipping.global.VehicleRegistrationData;
 import dev.murad.shipping.entity.custom.train.AbstractTrainCarEntity;
 import dev.murad.shipping.entity.custom.vessel.tug.VehicleFrontPart;
 import dev.murad.shipping.entity.navigation.LocomotiveNavigator;
 import dev.murad.shipping.item.LocoRouteItem;
+import dev.murad.shipping.item.NetworkChartItem;
 import dev.murad.shipping.setup.ModBlocks;
 import dev.murad.shipping.setup.ModItems;
 import dev.murad.shipping.setup.ModSounds;
 import dev.murad.shipping.util.*;
+import dev.murad.shipping.transport.DispatchRoutePlan;
+import dev.murad.shipping.transport.TransportMode;
 import lombok.Setter;
 import java.util.List;
 import net.minecraft.core.BlockPos;
@@ -60,7 +65,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 
-public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity implements LinkableEntityHead<AbstractTrainCarEntity>, ItemHandlerVanillaContainerWrapper, HeadVehicle, StallingCapability {
+public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity implements LinkableEntityHead<AbstractTrainCarEntity>, ItemHandlerVanillaContainerWrapper, DispatchableHeadVehicle, StallingCapability {
 
     // =========================================================================
     // Consist (chain) management
@@ -123,7 +128,11 @@ public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity im
     }
 
     private static final String NAVIGATOR_TAG = "navigator";
+    private static final String DISPATCH_NAVIGATION_TAG = "dispatchNavigation";
+    private static final String DISPATCH_ROUTE_TAG = "dispatchRoute";
     protected LocomotiveNavigator navigator = new LocomotiveNavigator(this);
+    private final DispatchNavigation dispatchNavigation = new DispatchNavigation();
+    private LocoRoute dispatchRoute = new LocoRoute();
 
     private static final EntityDataAccessor<Boolean> INDEPENDENT_MOTION = SynchedEntityData.defineId(AbstractLocomotiveEntity.class, EntityDataSerializers.BOOLEAN);
     private static final double DOCK_CLEAR_DISTANCE = 0.75D;
@@ -223,7 +232,8 @@ public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity im
 
             @Override
             public boolean isItemValid(int slot, @Nonnull ItemStack stack) {
-                return stack.getItem() instanceof LocoRouteItem && LocoRouteItem.getRoute(stack).isUsable();
+                return stack.getItem() instanceof LocoRouteItem && LocoRouteItem.getRoute(stack).isUsable()
+                        || NetworkChartItem.matchesMode(stack, TransportMode.RAIL);
             }
         };
     }
@@ -268,6 +278,29 @@ public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity im
     @Override
     public List<ChunkPos> getUpcomingRouteChunks(int maxSteps) {
         return navigator.getUpcomingChunks(maxSteps);
+    }
+
+    @Override
+    public DispatchNavigation getDispatchNavigation() {
+        return dispatchNavigation;
+    }
+
+    @Override
+    public boolean applyDispatchRoute(DispatchRoutePlan plan) {
+        if (plan.mode() != TransportMode.RAIL) return false;
+        LocoRoute route = plan.toLocoRoute();
+        if (!route.isUsable()) return false;
+        dispatchRoute = route;
+        navigator.updateWithLocoRouteItem(dispatchRoute);
+        routeOverlayRevision++;
+        return true;
+    }
+
+    @Override
+    public void clearDispatchRoute() {
+        dispatchRoute = new LocoRoute();
+        updateNavigatorFromItem();
+        routeOverlayRevision++;
     }
 
 
@@ -810,11 +843,17 @@ public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity im
     }
 
     private void accelerate() {
-        var dir = this.getDirection();
-        if(Math.abs(this.getDeltaMovement().x) < speedLimit && Math.abs(this.getDeltaMovement().z) < speedLimit){
-            var mod = this.getSpeedModifier();
-            this.push(dir.getStepX() * mod, 0, dir.getStepZ() * mod);
-        }
+        Vec3 velocity = this.getDeltaMovement();
+        Vec3 horizontalVelocity = velocity.multiply(1, 0, 1);
+        double currentSpeed = horizontalVelocity.length();
+        double targetSpeed = Math.min(speedLimit, getMaxCartSpeedOnRail());
+        double nextSpeed = LocomotiveSpeedControl.approach(currentSpeed, targetSpeed, getSpeedModifier());
+        if (Math.abs(nextSpeed - currentSpeed) < 1.0E-6D) return;
+
+        Vec3 heading = currentSpeed > 1.0E-6D
+                ? horizontalVelocity.scale(1 / currentSpeed)
+                : Vec3.atLowerCornerOf(this.getDirection().getNormal());
+        this.setDeltaMovement(heading.x * nextSpeed, velocity.y, heading.z * nextSpeed);
     }
 
     @Override
@@ -975,6 +1014,10 @@ public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity im
     }
 
     private void updateNavigatorFromItem() {
+        if (dispatchNavigation.isClaimed() && dispatchRoute.isUsable()) {
+            navigator.updateWithLocoRouteItem(dispatchRoute);
+            return;
+        }
         ItemStack stack = routeItemHandler.getStackInSlot(0);
         if (stack.getItem() instanceof LocoRouteItem) {
             navigator.updateWithLocoRouteItem(LocoRouteItem.getRoute(stack));
@@ -991,6 +1034,9 @@ public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity im
         }
         routeItemHandler.deserializeNBT(this.registryAccess(), compound.getCompound(LOCO_ROUTE_INV_TAG));
         ownership.load(compound);
+        dispatchNavigation.load(compound.getCompound(DISPATCH_NAVIGATION_TAG));
+        dispatchRoute = compound.contains(DISPATCH_ROUTE_TAG)
+                ? LocoRoute.fromNBT(compound.getCompound(DISPATCH_ROUTE_TAG)) : new LocoRoute();
         updateNavigatorFromItem();
         navigator.loadFromNbt(compound.getCompound(NAVIGATOR_TAG));
         consistUUIDs.clear();
@@ -1017,6 +1063,8 @@ public abstract class AbstractLocomotiveEntity extends AbstractTrainCarEntity im
         compound.putBoolean("eo", engineOn);
         compound.put(LOCO_ROUTE_INV_TAG, routeItemHandler.serializeNBT(this.registryAccess()));
         compound.put(NAVIGATOR_TAG, navigator.saveToNbt());
+        compound.put(DISPATCH_NAVIGATION_TAG, dispatchNavigation.save());
+        if (dispatchRoute.isUsable()) compound.put(DISPATCH_ROUTE_TAG, dispatchRoute.toNBT());
         ownership.save(compound);
         rebuildConsistList();
         ListTag consistTag = new ListTag();

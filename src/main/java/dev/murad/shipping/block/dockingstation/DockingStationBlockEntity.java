@@ -1,6 +1,11 @@
 package dev.murad.shipping.block.dockingstation;
 
+import dev.murad.shipping.api.DockingDirective;
+import dev.murad.shipping.api.DockingStationServices;
 import dev.murad.shipping.entity.Colorable;
+import dev.murad.shipping.entity.custom.HeadVehicle;
+import dev.murad.shipping.entity.custom.DispatchableHeadVehicle;
+import dev.murad.shipping.util.LinkableEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.core.HolderLookup;
@@ -181,12 +186,7 @@ public class DockingStationBlockEntity extends BlockEntity {
     /** Updates the station's display name in the registry. */
     public void setStationName(String name) {
         if (stationId == null || !(level instanceof ServerLevel serverLevel)) return;
-        DockingStationRegistry.StationData data =
-                DockingStationRegistry.getOrCreate(serverLevel).getStation(stationId);
-        if (data != null) {
-            data.name = name;
-            DockingStationRegistry.getOrCreate(serverLevel).setDirty();
-        }
+        DockingStationRegistry.getOrCreate(serverLevel).renameStation(stationId, name);
     }
 
     /** Opens the docking station GUI for the given player. */
@@ -342,10 +342,14 @@ public class DockingStationBlockEntity extends BlockEntity {
         setChanged();
         syncToClient();
         if (level != null) level.invalidateCapabilities(worldPosition);
+        if (level instanceof ServerLevel serverLevel) {
+            DockingStationServices.vehicleDocked(serverLevel, this, vehicle);
+        }
         return true;
     }
 
     public void vacateDock() {
+        Entity departing = this.dockedVehicle;
         this.dockedVehicle = null;
         this.occupied = false;
         itemHandler.disconnect();
@@ -355,6 +359,9 @@ public class DockingStationBlockEntity extends BlockEntity {
         setChanged();
         syncToClient();
         if (level != null) level.invalidateCapabilities(worldPosition);
+        if (departing != null && level instanceof ServerLevel serverLevel) {
+            DockingStationServices.vehicleDeparted(serverLevel, this, departing);
+        }
     }
 
     /** Releases this dock only when it is still owned by the supplied vehicle. */
@@ -377,6 +384,12 @@ public class DockingStationBlockEntity extends BlockEntity {
 
     public boolean isHolding() {
         if (!hasValidOccupant()) return false;
+        HeadVehicle resolvedHead = getDockedHeadVehicle();
+        if (resolvedHead instanceof DispatchableHeadVehicle head) {
+            DockingDirective directive = head.getDispatchNavigation().directiveFor(stationId);
+            if (directive == DockingDirective.HOLD) return true;
+            if (directive == DockingDirective.PASS) return false;
+        }
         if (redstoneMode == RedstoneMode.HOLD_WHILE_POWERED && isPowered()) return true;
         if (redstoneMode == RedstoneMode.DISABLE_WHILE_POWERED && isPowered()) return false;
         return ticksSinceLastTransfer < idleTimeoutTicks;
@@ -402,6 +415,10 @@ public class DockingStationBlockEntity extends BlockEntity {
      */
     public boolean shouldPassThrough(Entity vehicle, Direction vehicleHeading) {
         if (level == null) return false;
+        if (vehicle instanceof DispatchableHeadVehicle head
+                && head.getDispatchNavigation().directiveFor(stationId) == DockingDirective.PASS) {
+            return true;
+        }
         Direction facing = getBlockState().getValue(DockingStationBlock.FACING);
         Direction inward = facing.getOpposite();
         BlockPos vehiclePos = worldPosition.relative(inward);
@@ -468,6 +485,9 @@ public class DockingStationBlockEntity extends BlockEntity {
         be.revalidateOccupant();
         if (be.dockedVehicle != null) {
             be.ticksSinceLastTransfer++;
+        }
+        if (level instanceof ServerLevel serverLevel) {
+            DockingStationServices.tick(serverLevel, be);
         }
     }
 
@@ -562,6 +582,13 @@ public class DockingStationBlockEntity extends BlockEntity {
     // =========================================================================
 
     @Nullable public Entity getDockedVehicle()     { return dockedVehicle; }
+    /** Resolves a docked wagon/barge back to the head vehicle that controls its consist. */
+    @Nullable public HeadVehicle getDockedHeadVehicle() {
+        if (dockedVehicle instanceof HeadVehicle head) return head;
+        if (dockedVehicle instanceof LinkableEntity<?> linked
+                && linked.getTrain().getHead() instanceof HeadVehicle head) return head;
+        return null;
+    }
     public boolean isOccupied() {
         return level != null && level.isClientSide ? occupied : hasValidOccupant();
     }

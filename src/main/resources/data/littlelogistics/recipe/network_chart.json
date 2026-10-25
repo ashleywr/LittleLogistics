@@ -1,0 +1,19 @@
+{
+  "type": "minecraft:crafting_shapeless",
+  "category": "misc",
+  "ingredients": [
+    {
+      "item": "minecraft:map"
+    },
+    {
+      "item": "littlelogistics:receiver_component"
+    },
+    {
+      "item": "littlelogistics:transmitter_component"
+    }
+  ],
+  "result": {
+    "count": 1,
+    "id": "littlelogistics:network_chart"
+  }
+}

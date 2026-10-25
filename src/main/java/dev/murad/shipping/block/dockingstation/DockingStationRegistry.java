@@ -69,6 +69,13 @@ public class DockingStationRegistry extends SavedData {
 
     private final Map<UUID, StationData> stations = new HashMap<>();
 
+    /** Immutable view suitable for integrations and dispatchers. */
+    public record StationSnapshot(UUID id, String name, Set<BlockPos> members,
+                                  long itemsLoaded, long itemsUnloaded,
+                                  long fluidLoaded, long fluidUnloaded,
+                                  long energyLoaded, long energyUnloaded,
+                                  long vehiclesDocked) {}
+
     // =========================================================================
     // Factory
     // =========================================================================
@@ -137,6 +144,33 @@ public class DockingStationRegistry extends SavedData {
     @Nullable
     public StationData getStation(UUID id) {
         return stations.get(id);
+    }
+
+    public Optional<StationSnapshot> snapshot(UUID id) {
+        StationData data = stations.get(id);
+        return data == null ? Optional.empty() : Optional.of(snapshot(id, data));
+    }
+
+    public List<StationSnapshot> snapshots() {
+        return stations.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey(Comparator.comparing(UUID::toString)))
+                .map(entry -> snapshot(entry.getKey(), entry.getValue()))
+                .toList();
+    }
+
+    public boolean renameStation(UUID id, String name) {
+        StationData data = stations.get(id);
+        String trimmed = name.trim();
+        if (data == null || trimmed.isEmpty() || trimmed.equals(data.name)) return false;
+        data.name = trimmed;
+        setDirty();
+        return true;
+    }
+
+    private StationSnapshot snapshot(UUID id, StationData data) {
+        return new StationSnapshot(id, data.name, Set.copyOf(data.members), data.itemsLoaded,
+                data.itemsUnloaded, data.fluidLoaded, data.fluidUnloaded,
+                data.energyLoaded, data.energyUnloaded, data.vehiclesDocked);
     }
 
     // =========================================================================

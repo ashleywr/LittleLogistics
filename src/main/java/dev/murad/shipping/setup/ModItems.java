@@ -126,6 +126,9 @@ public class ModItems {
     public static final DeferredHolder<Item, Item> LOCO_ROUTE = register("locomotive_route",
             () -> new LocoRouteItem(new Item.Properties().stacksTo(16)));
 
+    public static final DeferredHolder<Item, Item> NETWORK_CHART = register("network_chart",
+            () -> new NetworkChartItem(new Item.Properties().stacksTo(1)));
+
 
     public static void buildCreativeTab(BuildCreativeModeTabContentsEvent event) {
         PRIVATE_TAB_REGISTRY.getOrDefault(event.getTabKey(), new ArrayList<>())

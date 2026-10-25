@@ -135,6 +135,11 @@ public final class VehicleRegistrationData extends SavedData {
         }
     }
 
+    /** Read-only integration query used to distinguish an unloaded managed vehicle from a removed one. */
+    public boolean isRegistered(UUID vehicle) {
+        return registrations.containsKey(vehicle);
+    }
+
     public boolean mayRun(UUID owner) {
         return ShippingConfig.Server.OFFLINE_LOADING.get()
             || server.getPlayerList().getPlayer(owner) != null;

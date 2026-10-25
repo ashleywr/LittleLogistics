@@ -3,6 +3,7 @@ package dev.murad.shipping.setup;
 import dev.murad.shipping.ShippingMod;
 import dev.murad.shipping.util.LocoRoute;
 import dev.murad.shipping.util.TugRoute;
+import dev.murad.shipping.transport.NetworkChartReference;
 import net.minecraft.core.component.DataComponentType;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.codec.ByteBufCodecs;
@@ -26,6 +27,14 @@ public class ModDataComponents {
             DataComponentType.<LocoRoute>builder()
                 .persistent(LocoRoute.CODEC)
                 .networkSynchronized(LocoRoute.STREAM_CODEC)
+                .build()
+        );
+
+    public static final DeferredHolder<DataComponentType<?>, DataComponentType<NetworkChartReference>> NETWORK_CHART =
+        COMPONENTS.register("network_chart", () ->
+            DataComponentType.<NetworkChartReference>builder()
+                .persistent(NetworkChartReference.CODEC)
+                .networkSynchronized(NetworkChartReference.STREAM_CODEC)
                 .build()
         );
 

@@ -1,5 +1,7 @@
 package dev.murad.shipping.entity.custom.vessel.tug;
 
+import dev.murad.shipping.api.DispatchNavigation;
+import dev.murad.shipping.entity.custom.DispatchableHeadVehicle;
 import dev.murad.shipping.ShippingConfig;
 import dev.murad.shipping.block.dockingstation.DockingStationBlockEntity;
 import dev.murad.shipping.capability.StallingCapability;
@@ -11,6 +13,9 @@ import dev.murad.shipping.util.*;
 import dev.murad.shipping.entity.custom.vessel.VesselEntity;
 import dev.murad.shipping.entity.navigation.TugPathNavigator;
 import dev.murad.shipping.item.TugRouteItem;
+import dev.murad.shipping.item.NetworkChartItem;
+import dev.murad.shipping.transport.DispatchRoutePlan;
+import dev.murad.shipping.transport.TransportMode;
 import dev.murad.shipping.setup.ModBlocks;
 import dev.murad.shipping.setup.ModSounds;
 import lombok.Getter;
@@ -66,7 +71,7 @@ import java.util.UUID;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
 
-public abstract class AbstractTugEntity extends VesselEntity implements LinkableEntityHead<VesselEntity>, Container, WorldlyContainer, HeadVehicle, StallingCapability {
+public abstract class AbstractTugEntity extends VesselEntity implements LinkableEntityHead<VesselEntity>, Container, WorldlyContainer, DispatchableHeadVehicle, StallingCapability {
 
     protected final VehicleOwnership ownership;
 
@@ -114,6 +119,10 @@ public abstract class AbstractTugEntity extends VesselEntity implements Linkable
     private VehicleFrontPart frontHitbox;
     private static final EntityDataAccessor<Boolean> INDEPENDENT_MOTION = SynchedEntityData.defineId(AbstractTugEntity.class, EntityDataSerializers.BOOLEAN);
     private static final String ROUTE_PROGRESS_TAG = "route_progress";
+    private static final String DISPATCH_NAVIGATION_TAG = "dispatchNavigation";
+    private static final String DISPATCH_ROUTE_TAG = "dispatchRoute";
+    private final DispatchNavigation dispatchNavigation = new DispatchNavigation();
+    private TugRoute dispatchRoute = new TugRoute();
     private static final double ROUTE_LOOKAHEAD = 0.8D;
     // Fraction of the remaining heading error the tug turns through each tick while
     // cruising a route. Easing toward the track's own direction (rather than snapping to
@@ -288,7 +297,8 @@ public abstract class AbstractTugEntity extends VesselEntity implements Linkable
 
             @Override
             public boolean isItemValid(int slot, @Nonnull ItemStack stack) {
-                return stack.getItem() instanceof TugRouteItem && TugRouteItem.getRoute(stack).isComplete();
+                return stack.getItem() instanceof TugRouteItem && TugRouteItem.getRoute(stack).isComplete()
+                        || NetworkChartItem.matchesMode(stack, TransportMode.WATER);
             }
         };
     }
@@ -316,6 +326,9 @@ public abstract class AbstractTugEntity extends VesselEntity implements Linkable
         engineOn = false;
         contentsChanged = true;
         ownership.load(compound);
+        dispatchNavigation.load(compound.getCompound(DISPATCH_NAVIGATION_TAG));
+        dispatchRoute = compound.contains(DISPATCH_ROUTE_TAG)
+                ? TugRoute.fromNBT(compound.getCompound(DISPATCH_ROUTE_TAG)) : new TugRoute();
         consistUUIDs.clear();
         reconnectAttempts.clear();
         if (compound.contains(CONSIST_TAG, Tag.TAG_LIST)) {
@@ -337,6 +350,8 @@ public abstract class AbstractTugEntity extends VesselEntity implements Linkable
         compound.putDouble(ROUTE_PROGRESS_TAG, routeProgress);
         compound.putBoolean("engineOn", engineOn);
         compound.put("routeHandler", routeItemHandler.serializeNBT(this.registryAccess()));
+        compound.put(DISPATCH_NAVIGATION_TAG, dispatchNavigation.save());
+        if (dispatchRoute.isComplete()) compound.put(DISPATCH_ROUTE_TAG, dispatchRoute.toNBT());
         ownership.save(compound);
         // Persist consist list — rebuild from live chain first so new spring links are captured
         rebuildConsistList();
@@ -457,7 +472,8 @@ public abstract class AbstractTugEntity extends VesselEntity implements Linkable
     private void tickRouteCheck() {
         if (contentsChanged) {
             ItemStack stack = routeItemHandler.getStackInSlot(0);
-            TugRoute route = TugRouteItem.getRoute(stack);
+            TugRoute route = dispatchNavigation.isClaimed() && dispatchRoute.isComplete()
+                    ? dispatchRoute : TugRouteItem.getRoute(stack);
             this.setPath(route.isComplete() ? route : new TugRoute());
             contentsChanged = false;
         }
@@ -1076,6 +1092,31 @@ public abstract class AbstractTugEntity extends VesselEntity implements Linkable
             return approachTrack.upcomingChunks(approachProgress, maxSteps, false);
         }
         return routeTrack == null ? List.of() : routeTrack.upcomingChunks(routeProgress, maxSteps, true);
+    }
+
+    @Override
+    public DispatchNavigation getDispatchNavigation() {
+        return dispatchNavigation;
+    }
+
+    @Override
+    public boolean applyDispatchRoute(DispatchRoutePlan plan) {
+        if (plan.mode() != TransportMode.WATER) return false;
+        TugRoute route = plan.toTugRoute();
+        if (!route.isComplete()) return false;
+        dispatchRoute = route;
+        setPath(dispatchRoute);
+        contentsChanged = false;
+        routeOverlayRevision++;
+        return true;
+    }
+
+    @Override
+    public void clearDispatchRoute() {
+        dispatchRoute = new TugRoute();
+        contentsChanged = true;
+        tickRouteCheck();
+        routeOverlayRevision++;
     }
 
     @Override

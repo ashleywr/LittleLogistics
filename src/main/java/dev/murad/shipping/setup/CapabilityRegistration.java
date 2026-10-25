@@ -1,8 +1,11 @@
 package dev.murad.shipping.setup;
 
 import dev.murad.shipping.ShippingMod;
+import dev.murad.shipping.block.dockingstation.DockingStationBlock;
+import dev.murad.shipping.block.dockingstation.DockingStationBlockEntity;
 import dev.murad.shipping.entity.custom.vessel.tug.SteamTugEntity;
 import dev.murad.shipping.entity.custom.vessel.tug.EnergyTugEntity;
+import dev.murad.shipping.entity.custom.vessel.barge.ChestBargeEntity;
 import dev.murad.shipping.entity.custom.vessel.barge.FluidTankBargeEntity;
 import dev.murad.shipping.entity.custom.train.locomotive.SteamLocomotiveEntity;
 import dev.murad.shipping.entity.custom.train.locomotive.EnergyLocomotiveEntity;
@@ -13,7 +16,15 @@ import dev.murad.shipping.item.creative.CreativeCapacitor;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.capabilities.Capabilities;
+import net.neoforged.neoforge.capabilities.EntityCapability;
+import net.neoforged.neoforge.capabilities.ICapabilityProvider;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
+import net.minecraft.core.BlockPos;
+import net.minecraft.core.Direction;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.level.block.state.BlockState;
 
 @EventBusSubscriber(modid = ShippingMod.MOD_ID, bus = EventBusSubscriber.Bus.MOD)
 public class CapabilityRegistration {
@@ -24,126 +35,128 @@ public class CapabilityRegistration {
         // === Entity capabilities: ITEM_HANDLER ===
 
         // SteamTugEntity -> fuel item handler
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.ItemHandler.ENTITY,
             ModEntityTypes.STEAM_TUG.get(),
-            (entity, ctx) -> entity.getFuelItemHandler()
+            (entity, ctx) -> entity instanceof SteamTugEntity tug ? tug.getFuelItemHandler() : null
         );
 
         // EnergyTugEntity -> energy item handler
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.ItemHandler.ENTITY,
             ModEntityTypes.ENERGY_TUG.get(),
-            (entity, ctx) -> entity.getItemHandler()
+            (entity, ctx) -> entity instanceof EnergyTugEntity tug ? tug.getItemHandler() : null
         );
 
         // SteamLocomotiveEntity -> fuel item handler
         // Note: STEAM_LOCOMOTIVE is typed as EntityType<AbstractLocomotiveEntity>, cast needed
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.ItemHandler.ENTITY,
             ModEntityTypes.STEAM_LOCOMOTIVE.get(),
-            (entity, ctx) -> ((SteamLocomotiveEntity) entity).getFuelItemHandler()
+            (entity, ctx) -> entity instanceof SteamLocomotiveEntity locomotive
+                ? locomotive.getFuelItemHandler() : null
         );
 
         // EnergyLocomotiveEntity -> energy item handler
         // Note: ENERGY_LOCOMOTIVE is typed as EntityType<AbstractLocomotiveEntity>, cast needed
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.ItemHandler.ENTITY,
             ModEntityTypes.ENERGY_LOCOMOTIVE.get(),
-            (entity, ctx) -> ((EnergyLocomotiveEntity) entity).getEnergyItemHandler()
+            (entity, ctx) -> entity instanceof EnergyLocomotiveEntity locomotive
+                ? locomotive.getEnergyItemHandler() : null
         );
 
         // ChestCarEntity -> chest item handler
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.ItemHandler.ENTITY,
             ModEntityTypes.CHEST_CAR.get(),
-            (entity, ctx) -> entity.getRawHandler()
+            (entity, ctx) -> entity instanceof ChestCarEntity car ? car.getRawHandler() : null
         );
 
         // BarrelCarEntity -> chest item handler (same class as ChestCarEntity)
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.ItemHandler.ENTITY,
             ModEntityTypes.BARREL_CAR.get(),
-            (entity, ctx) -> entity.getRawHandler()
+            (entity, ctx) -> entity instanceof ChestCarEntity car ? car.getRawHandler() : null
         );
 
         // ChestBargeEntity -> chest item handler
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.ItemHandler.ENTITY,
             ModEntityTypes.CHEST_BARGE.get(),
-            (entity, ctx) -> entity.getRawHandler()
+            (entity, ctx) -> entity instanceof ChestBargeEntity barge
+                ? barge.getRawHandler() : null
         );
 
         // BarrelBargeEntity -> chest item handler (same class as ChestBargeEntity)
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.ItemHandler.ENTITY,
             ModEntityTypes.BARREL_BARGE.get(),
-            (entity, ctx) -> entity.getRawHandler()
+            (entity, ctx) -> entity instanceof ChestBargeEntity barge
+                ? barge.getRawHandler() : null
         );
 
         // === Entity capabilities: ENERGY ===
 
         // EnergyTugEntity -> internal battery
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.EnergyStorage.ENTITY,
             ModEntityTypes.ENERGY_TUG.get(),
-            (entity, ctx) -> entity.getInternalBattery()
+            (entity, ctx) -> entity instanceof EnergyTugEntity tug ? tug.getInternalBattery() : null
         );
 
         // EnergyLocomotiveEntity -> internal battery
         // Note: ENERGY_LOCOMOTIVE is typed as EntityType<AbstractLocomotiveEntity>, cast needed
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.EnergyStorage.ENTITY,
             ModEntityTypes.ENERGY_LOCOMOTIVE.get(),
-            (entity, ctx) -> ((EnergyLocomotiveEntity) entity).getInternalBattery()
+            (entity, ctx) -> entity instanceof EnergyLocomotiveEntity locomotive
+                ? locomotive.getInternalBattery() : null
         );
 
         // === Entity capabilities: FLUID_HANDLER ===
 
         // FluidTankBargeEntity -> fluid tank
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.FluidHandler.ENTITY,
             ModEntityTypes.FLUID_TANK_BARGE.get(),
-            (entity, ctx) -> entity.getTank()
+            (entity, ctx) -> entity instanceof FluidTankBargeEntity barge ? barge.getTank() : null
         );
 
         // FluidTankCarEntity -> fluid tank
-        event.registerEntity(
+        registerEntitySafely(event,
             Capabilities.FluidHandler.ENTITY,
             ModEntityTypes.FLUID_CAR.get(),
-            (entity, ctx) -> entity.getTank()
+            (entity, ctx) -> entity instanceof FluidTankCarEntity car ? car.getTank() : null
         );
 
         // === BlockEntity capabilities ===
 
         // Docking station port capabilities — exposed on every side except the inward face
         // that points at the docked vehicle (the vehicle lane, FACING.getOpposite()).
-        event.registerBlockEntity(
+        event.registerBlock(
             Capabilities.ItemHandler.BLOCK,
-            ModTileEntitiesTypes.DOCKING_STATION.get(),
-            (be, direction) -> {
-                if (direction == null) return be.getItemHandler();
-                var facing = be.getBlockState().getValue(dev.murad.shipping.block.dockingstation.DockingStationBlock.FACING);
-                return direction == facing.getOpposite() ? null : be.getItemHandler();
-            }
+            (level, pos, state, blockEntity, direction) -> {
+                DockingStationBlockEntity dock = dockAt(level, pos, state, direction);
+                return dock == null ? null : dock.getItemHandler();
+            },
+            ModBlocks.DOCKING_STATION.get()
         );
-        event.registerBlockEntity(
+        event.registerBlock(
             Capabilities.FluidHandler.BLOCK,
-            ModTileEntitiesTypes.DOCKING_STATION.get(),
-            (be, direction) -> {
-                if (direction == null) return be.getFluidHandler();
-                var facing = be.getBlockState().getValue(dev.murad.shipping.block.dockingstation.DockingStationBlock.FACING);
-                return direction == facing.getOpposite() ? null : be.getFluidHandler();
-            }
+            (level, pos, state, blockEntity, direction) -> {
+                DockingStationBlockEntity dock = dockAt(level, pos, state, direction);
+                return dock == null ? null : dock.getFluidHandler();
+            },
+            ModBlocks.DOCKING_STATION.get()
         );
-        event.registerBlockEntity(
+        event.registerBlock(
             Capabilities.EnergyStorage.BLOCK,
-            ModTileEntitiesTypes.DOCKING_STATION.get(),
-            (be, direction) -> {
-                if (direction == null) return be.getEnergyStorage();
-                var facing = be.getBlockState().getValue(dev.murad.shipping.block.dockingstation.DockingStationBlock.FACING);
-                return direction == facing.getOpposite() ? null : be.getEnergyStorage();
-            }
+            (level, pos, state, blockEntity, direction) -> {
+                DockingStationBlockEntity dock = dockAt(level, pos, state, direction);
+                return dock == null ? null : dock.getEnergyStorage();
+            },
+            ModBlocks.DOCKING_STATION.get()
         );
 
         // === Item capabilities ===
@@ -158,27 +171,53 @@ public class CapabilityRegistration {
         // === Entity capabilities: STALLING ===
 
         // Head vehicles — tugs
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.STEAM_TUG.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.ENERGY_TUG.get(), (entity, ctx) -> entity);
+        registerStalling(event, ModEntityTypes.STEAM_TUG.get());
+        registerStalling(event, ModEntityTypes.ENERGY_TUG.get());
 
         // Head vehicles — locomotives (typed as EntityType<AbstractLocomotiveEntity>)
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.STEAM_LOCOMOTIVE.get(), (entity, ctx) -> (StallingCapability) entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.ENERGY_LOCOMOTIVE.get(), (entity, ctx) -> (StallingCapability) entity);
+        registerStalling(event, ModEntityTypes.STEAM_LOCOMOTIVE.get());
+        registerStalling(event, ModEntityTypes.ENERGY_LOCOMOTIVE.get());
 
         // Tail vehicles — barges
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.CHEST_BARGE.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.BARREL_BARGE.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.CHUNK_LOADER_BARGE.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.FISHING_BARGE.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.FLUID_TANK_BARGE.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.SEATER_BARGE.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.VACUUM_BARGE.get(), (entity, ctx) -> entity);
+        registerStalling(event, ModEntityTypes.CHEST_BARGE.get());
+        registerStalling(event, ModEntityTypes.BARREL_BARGE.get());
+        registerStalling(event, ModEntityTypes.CHUNK_LOADER_BARGE.get());
+        registerStalling(event, ModEntityTypes.FISHING_BARGE.get());
+        registerStalling(event, ModEntityTypes.FLUID_TANK_BARGE.get());
+        registerStalling(event, ModEntityTypes.SEATER_BARGE.get());
+        registerStalling(event, ModEntityTypes.VACUUM_BARGE.get());
 
         // Tail vehicles — wagons
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.CHEST_CAR.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.BARREL_CAR.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.SEATER_CAR.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.FLUID_CAR.get(), (entity, ctx) -> entity);
-        event.registerEntity(StallingCapability.ENTITY_CAPABILITY, ModEntityTypes.CHUNK_LOADER_CAR.get(), (entity, ctx) -> entity);
+        registerStalling(event, ModEntityTypes.CHEST_CAR.get());
+        registerStalling(event, ModEntityTypes.BARREL_CAR.get());
+        registerStalling(event, ModEntityTypes.SEATER_CAR.get());
+        registerStalling(event, ModEntityTypes.FLUID_CAR.get());
+        registerStalling(event, ModEntityTypes.CHUNK_LOADER_CAR.get());
+    }
+
+    /**
+     * NeoForge multipart entities inherit their parent's {@link EntityType}. Capability lookup
+     * therefore invokes providers registered for the vehicle type when another mod scans a
+     * {@code PartEntity}. Keeping the provider itself typed to {@link Entity} avoids the bridge
+     * cast generated for a concrete vehicle class; each extractor can reject the part with null.
+     */
+    private static <T, C, E extends Entity> void registerEntitySafely(
+            RegisterCapabilitiesEvent event, EntityCapability<T, C> capability,
+            EntityType<E> entityType, ICapabilityProvider<Entity, C, T> provider) {
+        event.registerEntity(capability, entityType, provider);
+    }
+
+    private static <E extends Entity> void registerStalling(
+            RegisterCapabilitiesEvent event, EntityType<E> entityType) {
+        registerEntitySafely(event, StallingCapability.ENTITY_CAPABILITY, entityType,
+            (entity, ctx) -> entity instanceof StallingCapability stalling ? stalling : null);
+    }
+
+    private static DockingStationBlockEntity dockAt(Level level, BlockPos pos, BlockState state,
+                                                     Direction direction) {
+        if (direction != null && direction == state.getValue(DockingStationBlock.FACING).getOpposite()) {
+            return null;
+        }
+        return DockingStationBlock.getControllerBE(state, level, pos);
     }
 }

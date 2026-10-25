@@ -153,7 +153,12 @@ public class LocomotiveNavigator {
                     synchronizeAt(railPos, travelDirection,
                             wasSynchronized ? Optional.of(anchor) : Optional.empty());
                     if (wasSynchronized && !synchronizedToRoute) {
-                        invalidate();
+                        // Entity position and its stable rail direction are restored independently.
+                        // During the first few post-load ticks they can briefly describe adjacent
+                        // route steps. Treating that transient mismatch as a broken route leaves the
+                        // locomotive stalled until the route item is reinserted. Keep the persisted
+                        // route, drop only the stale cursor, and let serverTick synchronize again from
+                        // the first unambiguous rail it reaches.
                         return true;
                     }
                     if (!synchronizedToRoute) return true;

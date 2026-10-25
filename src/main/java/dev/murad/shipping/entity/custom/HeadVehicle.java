@@ -28,4 +28,5 @@ public interface HeadVehicle  {
     boolean isManagedServiceActive();
 
     List<ChunkPos> getUpcomingRouteChunks(int maxSteps);
+
 }
